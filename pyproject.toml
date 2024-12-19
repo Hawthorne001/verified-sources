@@ -12,11 +12,19 @@ packages = [{include = "sources"}]
 
 [tool.poetry.dependencies]
 python = ">=3.8.1,<3.13"
-dlt = {version = "0.4.9a2", allow-prereleases = true, extras = ["redshift", "bigquery", "postgres", "duckdb", "s3", "gs"]}
+dlt = {version = "1.3.0", allow-prereleases = true, extras = ["redshift", "bigquery", "postgres", "duckdb"]}
 graphlib-backport = {version = "*", python = "<3.9"}
 
+[tool.poetry.group.dltpure.dependencies]
+dlt = {version = "1.3.0", allow-prereleases = true}
+
+[tool.poetry.group.pytest.dependencies]
+pytest = "^7.2.0"
+pytest-mock = "^3.12.0"
+pytest-forked = "^1.6.0"
+
 [tool.poetry.group.dev.dependencies]
-mypy = "1.6.1"
+mypy = "^1.10.0"
 flake8 = "^6.0.0"
 pytest = "^7.2.0"
 bandit = "^1.7.4"
@@ -32,14 +40,19 @@ black = "^23.3.0"
 pypdf2 = "^3.0.1"
 greenlet = "<3.0.0"
 confluent-kafka = "^2.3.0"
+types-psycopg2 = "^2.9.0"
 pytest-mock = "^3.12.0"
 twisted = "22.10.0"
 pytest-forked = "^1.6.0"
+pendulum = "^3.0.0"
 
 [tool.poetry.group.sql_database.dependencies]
 sqlalchemy = ">=1.4"
 pymysql = "^1.0.3"
 connectorx = ">=0.3.1"
+
+[tool.poetry.group.pg_replication.dependencies]
+psycopg2-binary = ">=2.9.9"
 
 [tool.poetry.group.google_sheets.dependencies]
 google-api-python-client = "^2.78.0"
@@ -63,6 +76,7 @@ facebook-business = "^17.0.2"
 
 [tool.poetry.group.google_ads.dependencies]
 google-ads = "^21.1.0"
+google-api-python-client = "^2.129.0"
 
 [tool.poetry.group.salesforce.dependencies]
 simple-salesforce = "^1.12.4"
@@ -80,13 +94,17 @@ tiktoken = "^0.4.0"
 
 [tool.poetry.group.mongodb.dependencies]
 pymongo = "^4.3.3"
+pymongoarrow = ">=1.3.0"
 
 [tool.poetry.group.airtable.dependencies]
 pyairtable = "^2.1.0.post1"
 
 
 [tool.poetry.group.filesystem.dependencies]
-adlfs = ">=2023.9.0"
+fsspec = ">=2023.10.0"
+adlfs = ">=2023.10.0"
+s3fs = {version = ">=2022.4.0"}
+gcsfs = {version = ">=2022.4.0"}
 
 
 [tool.poetry.group.scrapy.dependencies]

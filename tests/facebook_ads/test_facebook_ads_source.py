@@ -22,7 +22,7 @@ def test_load_all_ads_object(destination_name: str) -> None:
         pipeline_name="facebook_ads",
         destination=destination_name,
         dataset_name="facebook_ads_data",
-        full_refresh=True,
+        dev_mode=True,
     )
     info = pipeline.run(facebook_ads_source())
     assert_load_info(info)
@@ -98,7 +98,7 @@ def test_load_insights_weekly() -> None:
     assert len(list(i_weekly)) == 0
 
 
-def test_get_start_date() -> pendulum.DateTime:
+def test_get_start_date() -> None:
     # Test with an ISO datetime string
     input_value = "2023-08-09T12:30:00"
     result = get_start_date(

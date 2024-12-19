@@ -1,26 +1,30 @@
 import os
+import sys
 import platform
 import pytest
-from typing import Any, Dict, Iterator, List, Set
+from typing import Any, Iterator, List, Sequence, Dict, Optional, Set
 from os import environ
 from unittest.mock import patch
 
 import dlt
-from dlt.common import json
+from dlt.common import json, known_env
 from dlt.common.data_types import py_type_to_sc_type
-from dlt.common.typing import DictStrAny
+from dlt.common.typing import DictStrAny, TDataItem
 from dlt.common.configuration.container import Container
-from dlt.common.configuration.specs.config_providers_context import (
-    ConfigProvidersContext,
-)
+from dlt.common.configuration.specs import PluggableRunContext
 from dlt.common.configuration.providers import (
     EnvironProvider,
     ConfigTomlProvider,
     SecretsTomlProvider,
 )
-from dlt.common.pipeline import LoadInfo, PipelineContext
+from dlt.common.configuration.specs.pluggable_run_context import (
+    SupportsRunContext,
+)
+from dlt.common.runtime.run_context import DOT_DLT, RunContext
+from dlt.common.pipeline import LoadInfo, PipelineContext, ExtractInfo
 from dlt.common.storages import FileStorage
 from dlt.common.schema.typing import TTableSchema
+from dlt.common.utils import set_working_dir
 
 from dlt.pipeline.exceptions import SqlClientNotAvailable
 
@@ -46,37 +50,72 @@ def drop_pipeline() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True, scope="session")
-def test_config_providers() -> Iterator[ConfigProvidersContext]:
+def test_config_providers():
     """Creates set of config providers where tomls are loaded from tests/.dlt"""
     config_root = "./sources/.dlt"
-    ctx = ConfigProvidersContext()
-    ctx.providers.clear()
-    ctx.add_provider(EnvironProvider())
-    ctx.add_provider(
-        SecretsTomlProvider(project_dir=config_root, add_global_config=False)
-    )
-    ctx.add_provider(
-        ConfigTomlProvider(project_dir=config_root, add_global_config=False)
-    )
-    # replace in container
-    Container()[ConfigProvidersContext] = ctx
-    # extras work when container updated
-    ctx.add_extras()
+
+    # inject provider context so the original providers are restored at the end
+    def _initial_providers(self):
+        return [
+            EnvironProvider(),
+            SecretsTomlProvider(settings_dir=config_root),
+            ConfigTomlProvider(settings_dir=config_root),
+        ]
+
+    with patch(
+        "dlt.common.runtime.run_context.RunContext.initial_providers",
+        _initial_providers,
+    ):
+        Container()[PluggableRunContext].reload_providers()
+        yield
+
+
+class MockableRunContext(RunContext):
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def global_dir(self) -> str:
+        return self._global_dir
+
+    @property
+    def run_dir(self) -> str:
+        return os.environ.get(known_env.DLT_PROJECT_DIR, self._run_dir)
+
+    @property
+    def data_dir(self) -> str:
+        return os.environ.get(known_env.DLT_DATA_DIR, self._data_dir)
+
+    _name: str
+    _global_dir: str
+    _run_dir: str
+    _settings_dir: str
+    _data_dir: str
+
+    @classmethod
+    def from_context(cls, ctx: SupportsRunContext) -> "MockableRunContext":
+        cls_ = cls(ctx.run_dir)
+        cls_._name = ctx.name
+        cls_._global_dir = ctx.global_dir
+        cls_._run_dir = ctx.run_dir
+        cls_._settings_dir = ctx.settings_dir
+        cls_._data_dir = ctx.data_dir
+        return cls_
 
 
 @pytest.fixture(autouse=True)
-def patch_pipeline_working_dir() -> None:
+def patch_pipeline_working_dir() -> Iterator[None]:
     """Puts the pipeline working directory into test storage"""
-    try:
-        with patch(
-            "dlt.common.configuration.paths._get_user_home_dir"
-        ) as _get_home_dir:
-            _get_home_dir.return_value = os.path.abspath(TEST_STORAGE_ROOT)
-            yield
-    except ModuleNotFoundError:
-        with patch("dlt.common.pipeline._get_home_dir") as _get_home_dir:
-            _get_home_dir.return_value = os.path.abspath(TEST_STORAGE_ROOT)
-            yield
+    ctx = PluggableRunContext()
+    mock = MockableRunContext.from_context(ctx.context)
+    mock._global_dir = mock._data_dir = os.path.join(
+        os.path.abspath(TEST_STORAGE_ROOT), DOT_DLT
+    )
+    ctx.context = mock
+
+    with Container().injectable_context(ctx):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -86,7 +125,7 @@ def new_test_storage() -> FileStorage:
 
 
 @pytest.fixture(scope="function", autouse=True)
-def preserve_environ() -> None:
+def preserve_environ() -> Iterator[None]:
     """Restores the environ after the test was run"""
     saved_environ = environ.copy()
     yield
@@ -108,7 +147,7 @@ def drop_active_pipeline_data() -> None:
                         # print("dropped")
                     except Exception as exc:
                         print(exc)
-                    with c.with_staging_dataset(staging=True):
+                    with c.with_staging_dataset():
                         try:
                             c.drop_dataset()
                             # print("dropped")
@@ -145,7 +184,7 @@ def clean_test_storage(
     if init_loader:
         from dlt.common.storages import LoadStorage
 
-        LoadStorage(True, "jsonl", LoadStorage.ALL_SUPPORTED_FILE_FORMATS)
+        LoadStorage(True, LoadStorage.ALL_SUPPORTED_FILE_FORMATS)
     return storage
 
 
@@ -227,6 +266,27 @@ def load_table_distinct_counts(
             return {r[0]: r[1] for r in rows}
 
 
+def select_data(
+    p: dlt.Pipeline, sql: str, schema_name: str = None
+) -> List[Sequence[Any]]:
+    """Returns select `sql` results as list."""
+    with p.sql_client(schema_name=schema_name) as c:
+        with c.execute_query(sql) as cur:
+            return list(cur.fetchall())
+
+
+def get_table_metrics(
+    extract_info: ExtractInfo, table_name: str
+) -> Optional[Dict[str, Any]]:
+    """Returns table metrics from ExtractInfo object."""
+    table_metrics_list = [
+        d
+        for d in extract_info.asdict()["table_metrics"]
+        if d["table_name"] == table_name
+    ]
+    return None if len(table_metrics_list) == 0 else table_metrics_list[0]
+
+
 def load_data_table_counts(p: dlt.Pipeline) -> DictStrAny:
     """Returns counts for all the data tables in default schema of `p` (excluding dlt tables)"""
     tables = [table["name"] for table in p.default_schema.data_tables()]
@@ -254,7 +314,10 @@ def load_tables_to_dicts(
 
 
 def assert_schema_on_data(
-    table_schema: TTableSchema, rows: List[Dict[str, Any]], requires_nulls: bool
+    table_schema: TTableSchema,
+    rows: List[Dict[str, Any]],
+    requires_nulls: bool,
+    check_json: bool,
 ) -> None:
     """Asserts that `rows` conform to `table_schema`. Fields and their order must conform to columns. Null values and
     python data types are checked.
@@ -276,9 +339,14 @@ def assert_schema_on_data(
                 columns_with_nulls.add(key)
                 continue
             expected_dt = table_columns[key]["data_type"]
-            # allow complex strings
-            if expected_dt == "complex":
-                value = json.loads(value)
+            # allow json strings
+            if expected_dt == "json":
+                if check_json:
+                    # NOTE: we expect a dict or a list here. simple types of null will fail the test
+                    value = json.loads(value)
+                else:
+                    # skip checking json types
+                    continue
             actual_dt = py_type_to_sc_type(type(value))
             assert actual_dt == expected_dt
 
@@ -288,3 +356,25 @@ def assert_schema_on_data(
             set(col["name"] for col in table_columns.values() if col["nullable"])
             == columns_with_nulls
         ), "Some columns didn't receive NULLs which is required"
+
+
+def data_item_length(data: TDataItem) -> int:
+    import pandas as pd
+    from dlt.common.libs.pyarrow import pyarrow as pa
+
+    if isinstance(data, list):
+        # If data is a list, check if it's a list of supported data types
+        if all(
+            isinstance(item, (list, pd.DataFrame, pa.Table, pa.RecordBatch))
+            for item in data
+        ):
+            return sum(data_item_length(item) for item in data)
+        # If it's a list but not a list of supported types, treat it as a single list object
+        else:
+            return len(data)
+    elif isinstance(data, pd.DataFrame):
+        return len(data.index)
+    elif isinstance(data, pa.Table) or isinstance(data, pa.RecordBatch):
+        return data.num_rows
+    else:
+        raise TypeError("Unsupported data type.")

@@ -1,3 +1,4 @@
+import pendulum.testing
 import pytest
 from typing import List
 import dlt
@@ -95,7 +96,7 @@ def test_visits(destination_name: str) -> None:
     """
 
     pipeline = dlt.pipeline(
-        destination=destination_name, full_refresh=True, dataset_name="matomo_dataset"
+        destination=destination_name, dev_mode=True, dataset_name="matomo_dataset"
     )
     data_events = matomo_visits(
         live_events_site_id=LIVE_EVENTS_SITE_ID, get_live_event_visitors=False
@@ -130,7 +131,7 @@ def test_visits_with_visitors(destination_name: str) -> None:
     """
 
     pipeline = dlt.pipeline(
-        destination=destination_name, full_refresh=True, dataset_name="matomo_dataset"
+        destination=destination_name, dev_mode=True, dataset_name="matomo_dataset"
     )
     data_events = matomo_visits(
         live_events_site_id=LIVE_EVENTS_SITE_ID,
@@ -281,10 +282,11 @@ def test_incrementing_reports(destination_name: str) -> None:
     """
     incremental_load_counts = []
     pipeline = dlt.pipeline(
-        destination=destination_name, full_refresh=True, dataset_name="matomo"
+        destination=destination_name, dev_mode=True, dataset_name="matomo"
     )
 
     # load the rest of the data
+    # TODO: this is defunct, mock the pendulum.now method
     for incremental_end_date in INCREMENTAL_END_DATES:
         with pendulum.test(incremental_end_date):
             data = matomo_reports(queries=QUERIES, site_id=REPORTS_SITE_ID)
@@ -323,7 +325,7 @@ def test_start_date(destination_name: str) -> None:
     pipeline1 = _create_pipeline(
         destination_name=destination_name,
         dataset_name="matomo_start_date1",
-        full_refresh=True,
+        dev_mode=True,
         include_reports=True,
         include_events=False,
         queries=QUERIES_START_DATE1,
@@ -332,7 +334,7 @@ def test_start_date(destination_name: str) -> None:
     pipeline2 = _create_pipeline(
         destination_name=destination_name,
         dataset_name="matomo_start_date2",
-        full_refresh=True,
+        dev_mode=True,
         include_reports=True,
         include_events=False,
         queries=QUERIES_START_DATE2,
@@ -349,21 +351,21 @@ def _create_pipeline(
     destination_name: str,
     dataset_name: str,
     queries: List[DictStrAny],
-    full_refresh: bool = True,
+    dev_mode: bool = True,
     include_reports: bool = False,
     include_events: bool = False,
 ):
     """
     Helper, creates the pipelines and asserts the data is loaded correctly
     :param destination_name - redshift/bigquery/postgres
-    :param full_refresh: pipeline parameter
+    :param dev_mode: pipeline parameter
     :param queries: Describes how many reports and what data should be retrieved for each report.
     :param include_reports: Bool to include the reports source
     :param include_events: Bool to include the live events source
     """
     pipeline = dlt.pipeline(
         destination=destination_name,
-        full_refresh=full_refresh,
+        dev_mode=dev_mode,
         dataset_name=dataset_name,
     )
     data_sources = []

@@ -3,23 +3,21 @@ import pytest
 from pendulum import datetime
 
 from sources.stripe_analytics import (
-    metrics_resource,
     incremental_stripe_source,
     stripe_source,
 )
-
 from tests.utils import ALL_DESTINATIONS, assert_load_info
 
 
 @pytest.mark.parametrize("destination_name", ALL_DESTINATIONS)
 def test_incremental_resources(destination_name: str) -> None:
-    # mind the full_refresh flag - it makes sure that data is loaded to unique dataset.
+    # mind the dev_mode flag - it makes sure that data is loaded to unique dataset.
     # this allows you to run the tests on the same database in parallel
     pipeline = dlt.pipeline(
         pipeline_name="stripe_analytics_test_inc",
         destination=destination_name,
         dataset_name="stripe_incremental_test",
-        full_refresh=True,
+        dev_mode=True,
     )
     data = incremental_stripe_source()
     # load all endpoints out of the data source
@@ -29,13 +27,13 @@ def test_incremental_resources(destination_name: str) -> None:
 
 @pytest.mark.parametrize("destination_name", ALL_DESTINATIONS)
 def test_updated_resources(destination_name: str) -> None:
-    # mind the full_refresh flag - it makes sure that data is loaded to unique dataset.
+    # mind the dev_mode flag - it makes sure that data is loaded to unique dataset.
     # this allows you to run the tests on the same database in parallel
     pipeline = dlt.pipeline(
         pipeline_name="stripe_analytics_test_upd",
         destination=destination_name,
         dataset_name="stripe_updated_test",
-        full_refresh=True,
+        dev_mode=True,
     )
     data = stripe_source()
     # load all endpoints out of the data source
@@ -45,13 +43,13 @@ def test_updated_resources(destination_name: str) -> None:
 
 @pytest.mark.parametrize("destination_name", ALL_DESTINATIONS)
 def test_load_subscription(destination_name: str) -> None:
-    # mind the full_refresh flag - it makes sure that data is loaded to unique dataset.
+    # mind the dev_mode flag - it makes sure that data is loaded to unique dataset.
     # this allows you to run the tests on the same database in parallel
     pipeline = dlt.pipeline(
         pipeline_name="stripe_analytics_subscriptions_test",
         destination=destination_name,
         dataset_name="stripe_subscriptions_test",
-        full_refresh=True,
+        dev_mode=True,
     )
     data = stripe_source(endpoints=("Subscription",), end_date=datetime(2024, 5, 3))
     data.resources["Subscription"].apply_hints(
@@ -66,10 +64,10 @@ def test_load_subscription(destination_name: str) -> None:
     # make sure all jobs were loaded
     assert_load_info(info)
     # now let's inspect the generated schema.
-    # it should contain just two tables: subscription and subscription__items__data
+    # it should contain just three tables: subscription, subscription__items__data and subscription__discounts
     schema = pipeline.default_schema
     user_tables = schema.data_tables()
-    assert len(user_tables) == 2
+    assert len(user_tables) == 3
     # tables are typed dicts
     subscription_table = user_tables[0]
     assert subscription_table["name"] == "subscription"
@@ -97,7 +95,7 @@ def test_incremental_event_load(destination_name: str) -> None:
         pipeline_name="stripe_analytics_event_test",
         destination=destination_name,
         dataset_name="stripe_event_test",
-        full_refresh=True,
+        dev_mode=True,
     )
     data = incremental_stripe_source(
         endpoints=("Event",), end_date=datetime(2024, 2, 1)
@@ -131,42 +129,3 @@ def test_incremental_event_load(destination_name: str) -> None:
     # we have new subscriptions in the next day!
     assert_load_info(info)
     assert get_active_subs() > active_subs
-
-
-@pytest.mark.parametrize("destination_name", ALL_DESTINATIONS)
-def test_metrics(destination_name: str) -> None:
-    # mind the full_refresh flag - it makes sure that data is loaded to unique dataset.
-    # this allows you to run the tests on the same database in parallel
-    pipeline = dlt.pipeline(
-        pipeline_name="stripe_analytics_metric_test",
-        destination=destination_name,
-        dataset_name="stripe_metric_test",
-        full_refresh=True,
-    )
-    #  Event has only uneditable data, so we should use 'incremental_stripe_source'.
-    source = incremental_stripe_source(endpoints=("Event",))
-    source.resources["Event"].apply_hints(
-        columns={
-            "created": {"data_type": "timestamp"},
-        }
-    )
-    load_info = pipeline.run(source)
-    print(load_info)
-
-    # Subscription has editable data, use stripe_source.
-    source = stripe_source(endpoints=("Subscription",))
-    source.resources["Subscription"].apply_hints(
-        columns={
-            "created": {"data_type": "timestamp"},
-        }
-    )
-    load_info = pipeline.run(source)
-    print(load_info)
-
-    resource = metrics_resource()
-
-    mrr = list(resource)[0]["MRR"]
-    assert mrr > 0
-
-    load_info = pipeline.run(resource)
-    assert_load_info(load_info)

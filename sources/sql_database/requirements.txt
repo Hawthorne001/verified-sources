@@ -1,2 +1,1 @@
-sqlalchemy>=1.4
-dlt>=0.4.7
+dlt>=1.0.0

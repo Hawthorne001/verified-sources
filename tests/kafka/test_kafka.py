@@ -120,7 +120,7 @@ def test_kafka_read(kafka_topics, kafka_messages):
         pipeline_name="kafka_test",
         destination="postgres",
         dataset_name="kafka_test_data",
-        full_refresh=True,
+        dev_mode=True,
     )
 
     resource = kafka_consumer(kafka_topics)
@@ -163,7 +163,7 @@ def test_kafka_read_custom_msg_processor(kafka_topics, kafka_messages):
         pipeline_name="kafka_test",
         destination="postgres",
         dataset_name="kafka_test_data",
-        full_refresh=True,
+        dev_mode=True,
     )
     resource = kafka_consumer(kafka_topics, msg_processor=_custom_msg_processor)
     load_info = pipeline.run(resource)
@@ -265,12 +265,55 @@ def test_kafka_incremental_read(kafka_producer, kafka_topics):
     _extract_assert(kafka_topics, {topic1: 6, topic2: 6})
 
 
+@pytest.mark.skip("We don't have a Kafka instance to test this source.")
+def test_read_after_state_dropped(kafka_topics, kafka_messages):
+    """
+    Check that after a pipeline state drop, the source returns the
+    same 3 messages (which means Kafka cluster offsets were reset).
+    """
+
+    def make_assertions(pipeline):
+        table_names = [t["name"] for t in pipeline.default_schema.data_tables()]
+        table_counts = load_table_counts(pipeline, *table_names)
+
+        assert set(table_counts.keys()) == set(kafka_topics)
+
+        with pipeline.sql_client() as c:
+            for tab in table_counts:
+                with c.execute_query(f"SELECT _kafka__key FROM {tab}") as cur:
+                    keys = [key[0] for key in cur.fetchall()]
+                    assert sorted(keys) == sorted(
+                        kafka_messages[tab]  # compare to the keys from the fixture
+                    )
+
+    pipeline = dlt.pipeline(
+        pipeline_name="kafka_test",
+        destination="postgres",
+        dataset_name="kafka_test_data",
+        dev_mode=True,
+    )
+
+    resource = kafka_consumer(kafka_topics)
+    pipeline.run(resource)
+
+    make_assertions(pipeline)
+
+    table_names = [t["name"] for t in pipeline.default_schema.data_tables()]
+    with pipeline.sql_client() as c:
+        c.drop_tables(*table_names)
+
+    pipeline = pipeline.drop()
+
+    pipeline.run(resource)
+    make_assertions(pipeline)
+
+
 def _extract_assert(topics, expected):
     pipeline = dlt.pipeline(
         pipeline_name="kafka_test",
         destination="postgres",
         dataset_name="kafka_test_data",
-        full_refresh=True,
+        dev_mode=True,
     )
 
     resource = kafka_consumer(topics)
