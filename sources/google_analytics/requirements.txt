@@ -3,3 +3,4 @@ google-api-python-client
 google-auth-oauthlib
 requests_oauthlib
 dlt>=0.3.25
+requests>=2.32.4 # not directly required, pinned by Snyk to avoid a vulnerability
