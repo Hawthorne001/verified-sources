@@ -1,3 +1,4 @@
 dlt>=0.5.1
 google-ads
 google-api-python-client
+urllib3>=2.6.3 # not directly required, pinned by Snyk to avoid a vulnerability
