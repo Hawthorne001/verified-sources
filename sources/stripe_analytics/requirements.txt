@@ -1,3 +1,4 @@
 pandas>=2.0.0
 stripe>=5.0.0
 dlt>=0.5.1
+urllib3>=2.6.3 # not directly required, pinned by Snyk to avoid a vulnerability
